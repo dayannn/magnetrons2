@@ -1,8 +1,9 @@
 #include <iostream>
 #include <math.h>
 #include <vector>
-#include "C:/Qt/Tools/mingw810_64/lib/gcc/x86_64-w64-mingw32/8.1.0/include/omp.h"
+#include "omp.h"
 #include <ctime>
+#include <time.h>
 
 using namespace std;
 
@@ -199,7 +200,7 @@ double integrate_one_point(point3D point, point3D n, point3D t1, point3D t2){
     double x_target = t1.x;
     double dy = (t2.y - t1.y)/N;
     double dz = (t2.z - t1.z)/N;
-#pragma omp parallel for
+
     for(int yi = 0; yi < N; yi++) {
         double y = t1.y  + yi * dy;     //the y-value
 
@@ -257,7 +258,14 @@ int main()
 
     unsigned int start_time =  clock(); // начальное время
     double cur_time = 0;
-    int obj_point_num = 24;      // колчество точек на цилиндре, в которых вычисляется толщина
+    int obj_point_num = 48;      // колчество точек на цилиндре, в которых вычисляется толщина
+
+
+    double start_omp;
+    double end_omp;
+    #if defined(_OPENMP)
+       start_omp = omp_get_wtime();
+    #endif
 
     vector<double> res(obj_point_num);
 
@@ -269,26 +277,38 @@ int main()
         point3D cent_3d = from_2d(cent);
         vector<point3D> pts = get_object_points(cent, obj_point_num, Wo, cur_time, Ro);
 
-
+        #pragma omp parallel for
         for (int j = 0; j < obj_point_num; j++) {
             point3D p = pts[j];
             point3D normal = get_normal_vec(cent_3d, p);
-
 
             res[j] = res[j] + time_delta * integrate_one_point(pts[j], normal, target_coords[0], target_coords[1]);
         }
 
         cur_time += time_delta;
 
-        print_res_vect(res);
+       // print_res_vect(res);
         cout << "processed " << i << " out of " << calc_num << endl;
     }
 
     unsigned int end_time = clock(); // конечное время
     unsigned int time = end_time - start_time; // искомое время
 
-    cout << "time= " << time << endl;
+    #if defined(_OPENMP)
+       end_omp = omp_get_wtime();
+    #endif
+
+    cout << "time= " << ((float)time)/CLOCKS_PER_SEC << endl;
+
+    #if defined(_OPENMP)
+           cout << "omp time= " << end_omp - start_omp<< endl;
+    #endif
+
 
     return 0;
+
+
+    // 6.14  10
+    // 15
 
 }
