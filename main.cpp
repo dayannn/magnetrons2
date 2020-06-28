@@ -14,34 +14,34 @@ double Rb = 10;
 double Ro = 1;
 
 // высота объекта
-double Ho = 10;
+double Ho =10;
 
 // угловая скорость барабана
 double Wb = 0.175;                    // рад/с ~10 град в сек
 
 // угловая скорость объекта
-double Wo = 0.35;                  // рад/с ~10 град в сек
+double Wo = 0.304;                  // рад/с ~10 град в сек
 
 // расстояние до мишени
-double L = 20;
+double L = 30;
 
 // ширина мишени
 double Wm = 8;
 
 // высота мишени
-double Hm = 15;
+double Hm = 10;
 
 // количество объектов
 double obj_num = 8;
 
 //время полного оборота барабана
-double turn_time = 6.283/ abs(Wb);
+double turn_time = M_PI * 2/ abs(Wb);
 
 //# количество измерений за 1 оборот
-int time_n = 40;
+int time_n = 60;
 
 // # количество оборотов барабана
-int turns_num = 20;
+int turns_num = 40;
 
 double time_delta = turn_time / time_n;
 
@@ -172,7 +172,91 @@ point3D mult (point3D p, double num){
     return res;
 }
 
-double get_function_value (point3D target_p, point3D object_p, point3D n){
+
+point3D divide(point3D p, double num){
+    point3D res = {p.x / num, p.y / num, p.z / num};
+    return res;
+}
+
+double norm(point3D p){
+    return sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
+}
+
+point3D cross_product(point3D p1, point3D p2){
+    point3D res;
+    res.x = p1.y * p2.z - p1.z * p2.y;
+    res.y = p1.z * p2.x - p1.x * p2.z;
+    res.z = p1.x * p2.y - p1.y * p2.x;
+    return res;
+}
+
+double scalar_product(point3D p1, point3D p2){
+    return p1.x*p2.x + p1.y*p2.y + p1.z*p2.z;
+}
+
+double determ (point3D a, point3D b, point3D c){
+    return a.x*b.y*c.z - a.x*b.z*c.y - a.y*b.x*c.z +
+            a.y*b.z*c.x + a.z*b.x*c.y - a.z*b.y*c.x;
+}
+
+
+// расстояние между скрещивающимися прямыми
+double closest_distance_between_lines(point3D a0, point3D a1, point3D b0, point3D b1){
+
+    // Calculate denomitator
+    point3D A = diff(a1, a0);
+    point3D B = diff(b1, b0);
+
+    double magA = norm(A);
+    double magB = norm(B);
+
+    point3D _A = divide(A, magA);
+    point3D _B = divide(B, magB);
+
+    point3D cross = cross_product(_A, _B);
+    double denom = pow(norm(cross), 2);
+
+
+    // If lines are parallel (denom=0) test if lines overlap.
+    // If they don't overlap then there is a closest point solution.
+    // If they do overlap, there are infinite closest positions, but there is a closest distance
+    if (denom == 0){
+        double d0 = scalar_product(_A, diff(b0,a0));
+
+        // Segments overlap, return distance between parallel segments
+        return norm(diff(sum(mult(_A, d0),a0), b0));
+    }
+
+
+    // Lines criss-cross: Calculate the projected closest points
+    point3D t = diff(b0, a0);
+    double detA = determ(t, _B, cross);
+    double detB = determ(t, _A, cross);
+
+    double t0 = detA/denom;
+    double t1 = detB/denom;
+
+    point3D pA = sum(a0, mult(_A, t0)); // Projected closest point on segment A
+    point3D pB = sum(b0, mult(_B, t1)); // Projected closest point on segment B
+
+    return norm(diff(pA, pB));
+}
+
+
+bool is_hidden_by_another_object(point3D a0, point3D a1, vector<point2D> objects_centers, double Ro){
+    for (int i = 0; i < objects_centers.size(); i++){
+        point2D center = objects_centers.at(i);
+        point3D b0 = {center.x, center.y, 0};
+        point3D b1 = {center.x, center.y, 1};
+        double dist = closest_distance_between_lines(a0, a1, b0, b1);
+        if (dist <= Ro){
+            return true;
+        }
+    }
+    return false;
+}
+
+double get_function_value (point3D target_p, point3D object_p, point3D n, vector<point2D> objects_centers, double Ro){
 
 
     point3D n1 = {0, 0, -1};   // нормаль к плоскости мишени
@@ -182,6 +266,10 @@ double get_function_value (point3D target_p, point3D object_p, point3D n){
 
     if (cos_teta < 0)            // точка на объекте не видима с точки на мишени
         return 0;
+
+    if (is_hidden_by_another_object(object_p, target_p, objects_centers, Ro)){
+        return 0;
+    }
 
     double cos_teta1 = abs(get_cosin(n1, s1));
 
@@ -193,8 +281,8 @@ double get_function_value (point3D target_p, point3D object_p, point3D n){
 
 }
 
-double integrate_one_point(point3D point, point3D n, point3D t1, point3D t2){
-    int N = 100;         //or a large number, the discretization step
+double integrate_one_point(point3D point, point3D n, point3D t1, point3D t2, vector<point2D> objects_centers, double Ro){
+    int N = 50;         //or a large number, the discretization step
     double integral = 0.0;
 
     double x_target = t1.x;
@@ -209,7 +297,7 @@ double integrate_one_point(point3D point, point3D n, point3D t1, point3D t2){
             double z = t1.z + zi*dz;    //the z-value
             point3D curr_point = {x_target, y, z};
 
-            integral += get_function_value(curr_point, point, n);  //function call
+            integral += get_function_value(curr_point, point, n, objects_centers, Ro);
         }
     }
     return integral*dy*dz;
@@ -244,11 +332,23 @@ vector<point3D> get_object_points(point2D point_center, double num, double Wo, d
     return res;
 }
 
+vector<point2D> get_objects_centers(double Wb, point2D starting_point_b, double cur_time, double obj_num){
+    double delta = M_PI * 2 / obj_num;
+
+    vector<point2D> res;
+
+    for (int i = 1; i < obj_num; i++){
+        double alpha_b = fmod(get_current_angle(Wb, cur_time) + delta * i, 2*M_PI);
+        point2D vec_b = rotate_point_0(starting_point_b, alpha_b);
+        res.push_back(vec_b);
+    }
+    return res;
+}
 
 void print_res_vect(vector<double> v){
     cout << "vect: ";
     for (int i = 0; i < v.size(); i++){
-        cout << v[i] << " ";
+        cout << v[i] << ", ";
     }
     cout << endl;
 }
@@ -258,7 +358,7 @@ int main()
 
     unsigned int start_time =  clock(); // начальное время
     double cur_time = 0;
-    int obj_point_num = 48;      // колчество точек на цилиндре, в которых вычисляется толщина
+    int obj_point_num = 24;      // колчество точек на цилиндре, в которых вычисляется толщина
 
 
     double start_omp;
@@ -276,18 +376,18 @@ int main()
         point2D cent = get_object_center(Wb, starting_point_b, cur_time);
         point3D cent_3d = from_2d(cent);
         vector<point3D> pts = get_object_points(cent, obj_point_num, Wo, cur_time, Ro);
+        vector<point2D> centers = get_objects_centers(Wb, starting_point_b, cur_time, obj_num);
 
         #pragma omp parallel for
         for (int j = 0; j < obj_point_num; j++) {
             point3D p = pts[j];
             point3D normal = get_normal_vec(cent_3d, p);
 
-            res[j] = res[j] + time_delta * integrate_one_point(pts[j], normal, target_coords[0], target_coords[1]);
+            res[j] = res[j] + time_delta * integrate_one_point(pts[j], normal, target_coords[0], target_coords[1], centers, Ro);
         }
 
         cur_time += time_delta;
 
-       // print_res_vect(res);
         cout << "processed " << i << " out of " << calc_num << endl;
     }
 
@@ -298,6 +398,7 @@ int main()
        end_omp = omp_get_wtime();
     #endif
 
+     print_res_vect(res);
     cout << "time= " << ((float)time)/CLOCKS_PER_SEC << endl;
 
     #if defined(_OPENMP)
@@ -307,8 +408,5 @@ int main()
 
     return 0;
 
-
-    // 6.14  10
-    // 15
 
 }
